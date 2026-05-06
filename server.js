@@ -592,6 +592,110 @@ app.delete('/api/lost-items/:id', async (req, res) => {
   }
 });
 
+// 사용자가 잃어버린 물건과, 게시판에 이미 등록된 습득물(found_items.json) 전체를
+// 한 번의 OpenAI 호출로 일괄 비교해서 가능성 높은 후보를 추천한다.
+// - lostItemId 가 주어지면 lost_items.json 에서 해당 항목 정보를 사용
+// - 또는 inputKeywords / inputDescription 으로 즉시 입력 가능
+app.post('/api/recommend', async (req, res) => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey || !String(apiKey).trim()) {
+    return res.status(503).json({ error: 'OPENAI_API_KEY is not set in .env' });
+  }
+
+  let { lostItemId, inputKeywords, inputDescription } = req.body || {};
+
+  // 등록된 분실물 ID로부터 정보를 채워 넣음
+  if (lostItemId != null && Number.isFinite(Number(lostItemId))) {
+    try {
+      const lostData = await readJsonArrayFile(LOST_ITEMS_PATH, 'lostItems');
+      const found = lostData.lostItems.find((x) => Number(x.id) === Number(lostItemId));
+      if (!found) return res.status(404).json({ error: 'lost item not found' });
+      if (!inputKeywords) {
+        inputKeywords = found.inputKeywords
+          || (Array.isArray(found.mergedKeywords) ? found.mergedKeywords.join(', ') : '');
+      }
+      if (!inputDescription) inputDescription = found.inputDescription || '';
+    } catch (e) {
+      console.error('recommend: read lost-items failed', e);
+    }
+  }
+
+  if (!inputKeywords || !String(inputKeywords).trim()) {
+    return res.status(400).json({ error: 'inputKeywords is required' });
+  }
+
+  const kw = String(inputKeywords).trim();
+  const desc = inputDescription != null ? String(inputDescription).trim() : '';
+
+  try {
+    const data = await readJsonArrayFile(FOUND_ITEMS_PATH, 'foundItems');
+    // 이미 전달완료된 항목은 제외, 토큰 보호용 상한 100
+    const items = data.foundItems.filter((it) => it.status !== 'returned').slice(0, 100);
+    if (items.length === 0) {
+      return res.json({ recommendations: [], totalScanned: 0 });
+    }
+
+    const itemsBlock = items
+      .map((it, i) => {
+        const kws = Array.isArray(it.keywords) && it.keywords.length
+          ? ` | 키워드: ${it.keywords.join(', ')}`
+          : '';
+        return `${i + 1}. id=${it.id} | 장소: ${it.location || '(없음)'} | 설명: ${it.description || '(없음)'}${kws}`;
+      })
+      .join('\n');
+
+    const prompt = `너는 사내 분실물 매칭 AI다. 사용자가 잃어버린 물건과, 게시판에 이미 등록된 여러 습득물 항목을 각각 비교해서 같은 물건일 가능성을 판단해라.
+
+[사용자가 잃어버린 물건]
+키워드: ${kw}
+설명: ${desc || '(없음)'}
+
+[게시판에 등록된 습득물 목록 (총 ${items.length}건)]
+${itemsBlock}
+
+규칙:
+- 모든 항목에 대해 평가하되, similarity 가 25 미만인 명백히 무관한 항목은 결과에서 제외해도 된다.
+- 키워드, 설명, 장소를 종합 고려해라. 색상/브랜드/형태 같은 구체 단서가 일치할수록 점수가 올라가야 한다.
+- id 는 반드시 위 목록에 등장한 숫자 그대로 응답해라.
+
+JSON만 응답해. 다른 텍스트 금지:
+{"results":[{"id": 항목의 id 숫자, "similarity": 0-100 정수 (같을 확률 %), "match": true/false (45 이상이면 true), "reason": "한 문장 판단 근거 (한국어)"}, ...]}`;
+
+    const parsed = await callOpenAiJson({
+      apiKey,
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.2,
+    });
+
+    const aiResults = Array.isArray(parsed.results) ? parsed.results : [];
+    const itemById = new Map(items.map((it) => [Number(it.id), it]));
+
+    const recommendations = aiResults
+      .map((r) => {
+        const item = itemById.get(Number(r.id));
+        if (!item) return null;
+        const sim = Number(r.similarity);
+        return {
+          foundItem: item,
+          similarity: Number.isFinite(sim) ? Math.max(0, Math.min(100, Math.round(sim))) : 0,
+          match: r.match === true,
+          reason: typeof r.reason === 'string' ? r.reason : '',
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.similarity - a.similarity);
+
+    res.json({ recommendations, totalScanned: items.length });
+  } catch (e) {
+    console.error('recommend failed', e && e.status, e && e.detail ? e.detail : e);
+    if (e && e.status) {
+      return res.status(502).json({ error: 'OpenAI request failed', detail: String(e.detail || '').slice(0, 500) });
+    }
+    res.status(500).json({ error: 'Recommend request failed' });
+  }
+});
+
 app.post('/api/match', async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey || !String(apiKey).trim()) {
@@ -637,4 +741,3 @@ JSON만 응답해. 다른 텍스트 금지:
 app.listen(PORT, () => {
   console.log(`Jubjub server http://localhost:${PORT}/jubjub.html`);
 });
-

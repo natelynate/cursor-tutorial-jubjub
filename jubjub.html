@@ -16,15 +16,25 @@
   .container { max-width: 720px; margin: 0 auto; }
 
   header {
-    background: linear-gradient(135deg, #f5a878 0%, #f0855a 100%);
-    color: #fff;
-    padding: 24px 28px;
     border-radius: 16px;
     margin-bottom: 16px;
-    box-shadow: 0 4px 16px rgba(240, 133, 90, 0.25);
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(240, 133, 90, 0.22);
+    background: #fff5ee;
+    line-height: 0; /* img 아래 공백 제거 */
   }
-  header h1 { font-size: 28px; margin-bottom: 4px; }
-  header p { font-size: 14px; opacity: 0.95; }
+  .navbar-banner {
+    display: block;
+    width: 100%;
+    /* 이미지 비율상 "줍줍" 타이틀 + 너구리 상반신이 들어오는 높이 */
+    height: 450px;
+    object-fit: cover;
+    /* 상단 한화 로고·줍줍 타이틀·너구리 상반신 구간을 중심으로 */
+    object-position: 50% 28%;
+  }
+  @media (max-width: 480px) {
+    .navbar-banner { height: 120px; object-position: 50% 20%; }
+  }
 
   .api-bar {
     background: #fff;
@@ -266,13 +276,13 @@
 <div class="container">
 
   <header>
-    <h1>🦝 줍줍</h1>
-    <p>사내 분실물, AI가 대신 찾아드려요</p>
+    <img
+      class="navbar-banner"
+      src="/data/logo.png"
+      alt="줍줍 — 분실물 매칭 서비스"
+      draggable="false"
+    >
   </header>
-
-  <div class="demo-hint" id="serverHint">
-    <strong>실행 방법:</strong> 프로젝트 루트에서 <code>.env.example</code>을 복사해 <code>.env</code>를 만들고 <code>OPENAI_API_KEY</code>를 넣은 뒤, <code>npm install</code> → <code>npm start</code>로 서버를 띄운 다음 이 페이지를 엽니다. API 키는 브라우저가 아니라 서버가 읽습니다.
-  </div>
 
   <div class="tabs">
     <button class="tab active" data-panel="lost">🔍 내 분실물</button>
@@ -283,8 +293,17 @@
   <!-- 내 분실물 -->
   <div class="panel active" id="panel-lost">
     <div class="card-section">
+      <h2>🔍 지금 게시판에서 바로 찾기</h2>
+      <form id="recommendForm">
+        <input type="text" id="recKeywords" placeholder="키워드 (예: 검정 텀블러, 스타벅스 로고)" required>
+        <textarea id="recDescription" placeholder="자세한 설명 (선택, 예: 어제 오후 3층 회의실에서 잃어버림, 파란 스티커)"></textarea>
+        <button type="submit" class="primary" id="recSubmit">🤖 AI에게 추천 받기</button>
+      </form>
+      <div class="item-list" id="recResults"></div>
+    </div>
+
+    <div class="card-section">
       <h2>찾고 있는 물건 등록</h2>
-      <p class="hint">키워드·설명(+이미지)을 등록해두면, 습득물 목록(<code>data/found_items.json</code>)을 일정 간격으로 AI가 훑어서 잃어버린 물건일 가능성이 높은 항목을 추천·알림합니다 🤖</p>
       <div class="monitor-bar">
         <span>🔁 AI 주기 스캔</span>
         <select id="scanInterval" title="등록 키워드 vs 전체 게시글 재검사 간격">
@@ -318,8 +337,7 @@
       </form>
     </div>
     <div class="card-section">
-      <h2>📋 게시판</h2>
-      <p class="hint">목록은 <code>data/found_items.json</code>과 동기화됩니다. 검색은 장소·설명·키워드 기준입니다.</p>
+      <h2>📋 줍줍 게시판</h2>
       <div class="search-row">
         <label for="boardSearch">🔎 검색</label>
         <input type="search" id="boardSearch" placeholder="키워드 (예: 충전기, 3층, 김주섬)" autocomplete="off">
@@ -470,6 +488,21 @@ async function apiDeleteLostItem(id) {
   return res.json();
 }
 
+async function apiRecommend(body) {
+  const res = await fetch('/api/recommend', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let detail = text;
+    try { detail = JSON.parse(text).error || text; } catch {}
+    throw new Error(detail || ('recommend ' + res.status));
+  }
+  return JSON.parse(text);
+}
+
 // ============= 탭 전환 =============
 document.querySelectorAll('.tab').forEach(t => {
   t.onclick = () => {
@@ -607,6 +640,82 @@ if (scanIntervalEl) {
   scanIntervalEl.onchange = restartScanTimer;
 }
 
+// ============= 즉시 추천 검색 (게시판 전체 vs 입력 description) =============
+document.getElementById('recommendForm').onsubmit = async e => {
+  e.preventDefault();
+  const inputKeywords = document.getElementById('recKeywords').value.trim();
+  const inputDescription = document.getElementById('recDescription').value.trim();
+  if (!inputKeywords) return;
+
+  const btn = document.getElementById('recSubmit');
+  const resultsEl = document.getElementById('recResults');
+  btn.disabled = true;
+  btn.textContent = '🔎 검색 중...';
+  resultsEl.innerHTML = '<div class="empty">🤖 AI가 게시판을 훑어보는 중...</div>';
+
+  try {
+    const { recommendations = [], totalScanned = 0 } = await apiRecommend({
+      inputKeywords,
+      inputDescription,
+    });
+    renderRecommendations(recommendations, totalScanned);
+    if (recommendations.length > 0) {
+      showStatus('🎯 후보 ' + recommendations.length + '건 추천!');
+    } else {
+      showStatus('🤖 게시판 ' + totalScanned + '건 검토, 매칭 없음');
+    }
+  } catch (err) {
+    console.error(err);
+    resultsEl.innerHTML = '<div class="empty" style="color:#c66">⚠️ 추천을 받지 못했습니다: ' + escape(String(err.message || err)) + '</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🤖 AI에게 추천 받기';
+  }
+};
+
+function renderRecommendations(recs, totalScanned) {
+  const el = document.getElementById('recResults');
+  if (!Array.isArray(recs) || recs.length === 0) {
+    el.innerHTML = '<div class="empty">🤖 게시판 ' + totalScanned + '건을 모두 살펴봤지만, 비슷한 항목이 없어요.<br>아래에서 분실물을 등록해두면 새 글이 올라올 때 알려드릴게요.</div>';
+    return;
+  }
+  const strong = recs.filter(r => r.similarity >= 45);
+  const weak = recs.filter(r => r.similarity >= 25 && r.similarity < 45);
+
+  let html = '<div style="font-size:12px; color:#888; margin-top:14px; margin-bottom:4px;">게시판 ' + totalScanned + '건 검토 완료</div>';
+  if (strong.length > 0) {
+    html += '<div style="font-size:13px; color:#d97f3f; font-weight:500; margin-top:8px;">🎯 가능성 높음 (' + strong.length + '건)</div>';
+    html += strong.map(renderRecCard).join('');
+  }
+  if (weak.length > 0) {
+    html += '<div style="font-size:13px; color:#888; margin-top:14px;">🤔 약한 후보 (' + weak.length + '건)</div>';
+    html += weak.map(renderRecCard).join('');
+  }
+  if (strong.length === 0 && weak.length === 0) {
+    html += '<div class="empty">🤖 의미 있는 후보가 없어요. 키워드를 더 구체적으로 적어보세요.</div>';
+  }
+  el.innerHTML = html;
+}
+
+function renderRecCard(r) {
+  const it = r.foundItem || {};
+  const cls = r.similarity >= 45 ? 'item alert-item' : 'item';
+  const kws = Array.isArray(it.keywords) && it.keywords.length
+    ? it.keywords.map(k => `<span class="similarity" style="background:#f5a878; margin-right:6px;">#${escape(k)}</span>`).join('')
+    : '';
+  return `
+    <div class="${cls}">
+      <span class="similarity">추천 ${r.similarity}%</span>
+      <div class="item-title">📍 ${escape(it.location || '(장소 미상)')}</div>
+      ${it.imageRelPath ? `<div class="item-desc"><img alt="습득물 이미지" src="/${escape(it.imageRelPath)}" style="max-width:100%; border-radius:10px; border:1px solid #f0e0d0;"></div>` : ''}
+      <div class="item-desc">${escape(it.description || '(AI 분석 결과 없음)')}</div>
+      ${kws ? `<div class="item-desc">${kws}</div>` : ''}
+      <div class="reason">💡 ${escape(r.reason || '판단 근거 없음')}</div>
+      <div class="item-meta">${escape(it.createdAt || '')} · id ${it.id}</div>
+    </div>
+  `;
+}
+
 // ============= 분실물 등록 =============
 document.getElementById('lostForm').onsubmit = async e => {
   e.preventDefault();
@@ -660,6 +769,7 @@ function renderLost(lostItems) {
       ${i.imageRelPath ? `<div class="item-desc"><img alt="분실물 이미지" src="/${escape(i.imageRelPath)}" style="max-width:100%; border-radius:10px; border:1px solid #f0e0d0;"></div>` : ''}
       <div class="item-meta">${escape(i.createdAt || '')}</div>
       <div class="monitor-bar" style="margin-top:8px;">
+        <button class="primary" data-lost-search="${i.id}" style="padding:6px 12px; font-size:12px;">🔍 지금 검색</button>
         <span>상태</span>
         <select data-lost-status="${i.id}">
           <option value="open" ${i.status === 'open' ? 'selected' : ''}>미해결</option>
@@ -672,6 +782,32 @@ function renderLost(lostItems) {
 
   el.querySelectorAll('[data-lost-delete]').forEach(btn => {
     btn.onclick = () => deleteLost(Number(btn.getAttribute('data-lost-delete')));
+  });
+  el.querySelectorAll('[data-lost-search]').forEach(btn => {
+    btn.onclick = async () => {
+      const id = Number(btn.getAttribute('data-lost-search'));
+      const origText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '🔎 검색 중...';
+      const resultsEl = document.getElementById('recResults');
+      resultsEl.innerHTML = '<div class="empty">🤖 AI가 게시판을 훑어보는 중...</div>';
+      try {
+        const { recommendations = [], totalScanned = 0 } = await apiRecommend({ lostItemId: id });
+        renderRecommendations(recommendations, totalScanned);
+        // 즉시 입력 폼은 비워서 혼동 방지
+        document.getElementById('recKeywords').value = '';
+        document.getElementById('recDescription').value = '';
+        // 결과로 스크롤
+        resultsEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        showStatus(recommendations.length > 0 ? '🎯 후보 ' + recommendations.length + '건!' : '🤖 매칭 없음');
+      } catch (e) {
+        console.error(e);
+        resultsEl.innerHTML = '<div class="empty" style="color:#c66">⚠️ 추천을 받지 못했습니다: ' + escape(String(e.message || e)) + '</div>';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    };
   });
   el.querySelectorAll('[data-lost-status]').forEach(sel => {
     sel.onchange = async () => {
@@ -741,7 +877,6 @@ async function refreshBoardList() {
     const hint = document.getElementById('serverHint');
     if (hint) {
       hint.classList.remove('error');
-      hint.innerHTML = '<strong>연결됨:</strong> 습득물은 <code>data/found_items.json</code>과 동기화됩니다. AI 키는 서버가 <code>.env</code>에서 읽습니다.';
     }
     if (!foundItems || foundItems.length === 0) {
       el.innerHTML = '<div class="empty">' + (q ? '검색 결과가 없어요.' : '아직 습득물이 없어요.') + '</div>';
