@@ -1,24 +1,3 @@
 {
-  "lostItems": [
-    {
-      "id": 1778047672714,
-      "inputKeywords": "검정 텀블러",
-      "inputDescription": "어제 오후 3층 근처에서 잃어버렸어요. 스티커가 붙어있을 수도 있어요.",
-      "imageFileName": "image1.jpg",
-      "imageRelPath": "image/image1.jpg",
-      "aiKeywords": [
-        "텀블러",
-        "검정"
-      ],
-      "mergedKeywords": [
-        "검정",
-        "텀블러",
-        "컵"
-      ],
-      "status": "open",
-      "createdAt": "2026-05-06T06:07:56.714Z",
-      "createdBy": "나",
-      "source": "demo"
-    }
-  ]
+  "lostItems": []
 }
