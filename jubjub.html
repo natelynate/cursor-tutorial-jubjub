@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🦝 줍줍 - 사내 분실물 매칭</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+    background: #fdf6ef;
+    color: #3a2e26;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .container { max-width: 720px; margin: 0 auto; }
+
+  header {
+    background: linear-gradient(135deg, #f5a878 0%, #f0855a 100%);
+    color: #fff;
+    padding: 24px 28px;
+    border-radius: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 16px rgba(240, 133, 90, 0.25);
+  }
+  header h1 { font-size: 28px; margin-bottom: 4px; }
+  header p { font-size: 14px; opacity: 0.95; }
+
+  .api-bar {
+    background: #fff;
+    border: 1px solid #f0e0d0;
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .api-bar label { font-size: 13px; color: #888; white-space: nowrap; }
+  .api-bar input {
+    flex: 1;
+    border: none;
+    background: #f9f5f0;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .api-bar input:focus { outline: 2px solid #f5a878; }
+
+  .tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .tab {
+    flex: 1;
+    background: #fff;
+    border: 1px solid #f0e0d0;
+    padding: 14px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .tab:hover { background: #fdf0e3; }
+  .tab.active {
+    background: #f5a878;
+    color: #fff;
+    border-color: #f5a878;
+  }
+  .tab .badge {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: #ff5252;
+    color: #fff;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    min-width: 18px;
+    display: none;
+  }
+  .tab .badge.show { display: inline-block; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card-section {
+    background: #fff;
+    border: 1px solid #f0e0d0;
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .card-section h2 {
+    font-size: 17px;
+    margin-bottom: 6px;
+    color: #d97f3f;
+  }
+  .card-section .hint {
+    font-size: 13px;
+    color: #999;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+
+  form { display: flex; flex-direction: column; gap: 10px; }
+  input[type=text], textarea {
+    border: 1px solid #f0e0d0;
+    background: #fdf8f3;
+    padding: 12px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+  }
+  input[type=text]:focus, textarea:focus {
+    outline: 2px solid #f5a878;
+    background: #fff;
+  }
+  textarea { min-height: 70px; }
+
+  button.primary {
+    background: #f5a878;
+    color: #fff;
+    border: none;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  button.primary:hover { background: #e89461; }
+  button.primary:disabled { background: #ccc; cursor: not-allowed; }
+
+  .item-list { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .item {
+    background: #fdf8f3;
+    border: 1px solid #f0e0d0;
+    border-radius: 12px;
+    padding: 14px 16px;
+    position: relative;
+  }
+  .item-title { font-weight: 500; margin-bottom: 4px; font-size: 14px; }
+  .item-desc { font-size: 13px; color: #666; line-height: 1.5; margin-bottom: 4px; }
+  .item-meta { font-size: 11px; color: #aaa; }
+  .item .delete-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: none;
+    border: none;
+    color: #c66;
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .alert-item {
+    background: linear-gradient(135deg, #fff4e6 0%, #ffe8d1 100%);
+    border: 2px solid #f5a878;
+  }
+  .alert-item.read { opacity: 0.7; background: #fdf8f3; border-color: #f0e0d0; }
+  .similarity {
+    display: inline-block;
+    background: #f0855a;
+    color: #fff;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+  .reason {
+    background: #fff;
+    border-left: 3px solid #f5a878;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #666;
+    margin-top: 6px;
+  }
+
+  .empty {
+    text-align: center;
+    color: #aaa;
+    padding: 30px;
+    font-size: 13px;
+  }
+
+  #status {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #3a2e26;
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 24px;
+    font-size: 13px;
+    display: none;
+    z-index: 100;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  }
+  #status.show { display: block; }
+
+  .demo-hint {
+    background: #fff8e6;
+    border: 1px dashed #e8b864;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #876530;
+    margin-bottom: 12px;
+  }
+  .demo-hint.error {
+    background: #ffebee;
+    border-color: #e57373;
+    color: #8a2c2c;
+  }
+  .search-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .search-row label { font-size: 13px; color: #888; white-space: nowrap; }
+  .search-row input[type=search] {
+    flex: 1;
+    min-width: 160px;
+    border: 1px solid #f0e0d0;
+    background: #fdf8f3;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  .search-row input[type=search]:focus {
+    outline: 2px solid #f5a878;
+    background: #fff;
+  }
+  .monitor-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: #666;
+    margin-top: 12px;
+  }
+  .monitor-bar select {
+    border: 1px solid #f0e0d0;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    background: #fff;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>🦝 줍줍</h1>
+    <p>사내 분실물, AI가 대신 찾아드려요</p>
+  </header>
+
+  <div class="demo-hint" id="serverHint">
+    <strong>실행 방법:</strong> 프로젝트 루트에서 <code>.env.example</code>을 복사해 <code>.env</code>를 만들고 <code>OPENAI_API_KEY</code>를 넣은 뒤, <code>npm install</code> → <code>npm start</code>로 서버를 띄운 다음 이 페이지를 엽니다. API 키는 브라우저가 아니라 서버가 읽습니다.
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-panel="lost">🔍 내 분실물</button>
+    <button class="tab" data-panel="board">📋 습득물 게시판</button>
+    <button class="tab" data-panel="alerts">🔔 알림 <span class="badge" id="alertBadge">0</span></button>
+  </div>
+
+  <!-- 내 분실물 -->
+  <div class="panel active" id="panel-lost">
+    <div class="card-section">
+      <h2>찾고 있는 물건 등록</h2>
+      <p class="hint">키워드를 등록해두면, 게시글 목록(<code>data/posts.json</code>)을 일정 간격으로 AI가 훑어서 잃어버린 물건일 가능성이 높은 글을 추천·알림합니다 🤖</p>
+      <div class="monitor-bar">
+        <span>🔁 AI 주기 스캔</span>
+        <select id="scanInterval" title="등록 키워드 vs 전체 게시글 재검사 간격">
+          <option value="0">끔</option>
+          <option value="30000" selected>30초</option>
+          <option value="60000">1분</option>
+          <option value="120000">2분</option>
+          <option value="300000">5분</option>
+        </select>
+        <span id="scanStatus">대기 중</span>
+      </div>
+      <form id="lostForm">
+        <input type="text" id="lostKeywords" placeholder="키워드 (예: 검정 텀블러, 스타벅스 로고)" required>
+        <textarea id="lostDescription" placeholder="자세한 설명 (예: 어제 오후 3층 대회의실에 두고 옴, 파란 스티커 부착)"></textarea>
+        <button type="submit" class="primary">키워드 등록하기</button>
+      </form>
+      <div class="item-list" id="myLostList"></div>
+    </div>
+  </div>
+
+  <!-- 습득물 게시판 -->
+  <div class="panel" id="panel-board">
+    <div class="card-section">
+      <h2>📸 줍줍하기 (습득물 등록)</h2>
+      <p class="hint">새 글이 등록되면 모든 사람의 등록된 키워드와 AI가 자동 비교합니다.</p>
+      <form id="foundForm">
+        <input type="text" id="foundLocation" placeholder="발견 장소 (예: 3층 대회의실)" required>
+        <textarea id="foundDescription" placeholder="물건 설명 (예: 검정색 텀블러, 스타벅스 로고, 파란 스티커)" required></textarea>
+        <button type="submit" class="primary" id="foundSubmit">줍줍 등록!</button>
+      </form>
+    </div>
+    <div class="card-section">
+      <h2>📋 게시판</h2>
+      <p class="hint">목록은 <code>data/posts.json</code>과 동기화됩니다. 검색은 제목·설명·작성자 기준입니다.</p>
+      <div class="search-row">
+        <label for="boardSearch">🔎 검색</label>
+        <input type="search" id="boardSearch" placeholder="키워드 (예: 충전기, 3층, 김주섬)" autocomplete="off">
+      </div>
+      <div class="item-list" id="boardList"></div>
+    </div>
+  </div>
+
+  <!-- 알림 -->
+  <div class="panel" id="panel-alerts">
+    <div class="card-section">
+      <h2>🔔 매칭 알림</h2>
+      <p class="hint">AI가 발견한 매칭 결과입니다.</p>
+      <div class="item-list" id="alertsList"></div>
+    </div>
+  </div>
+
+</div>
+
+<div id="status"></div>
+
+<script>
+// ============= 데이터 (분실 키워드·알림만 로컬; 게시글은 data/posts.json) =============
+const STORAGE_KEY = 'jubjub_data_v2';
+const ALERTED_STORAGE_KEY = 'jubjub_alerted_v1';
+
+function loadData() {
+  let raw = localStorage.getItem(STORAGE_KEY);
+  let d = raw ? JSON.parse(raw) : { lostItems: [], alerts: [] };
+  if (!Array.isArray(d.lostItems)) d.lostItems = [];
+  if (!Array.isArray(d.alerts)) d.alerts = [];
+  return d;
+}
+let data = loadData();
+
+function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+
+function getAlertedSet() {
+  try {
+    const raw = localStorage.getItem(ALERTED_STORAGE_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+function saveAlertedSet(set) {
+  localStorage.setItem(ALERTED_STORAGE_KEY, JSON.stringify([...set]));
+}
+let alertedPairs = getAlertedSet();
+
+function pairKey(lostId, postId) {
+  return String(lostId) + ':' + String(postId);
+}
+
+function markPairAlerted(lostId, postId) {
+  alertedPairs.add(pairKey(lostId, postId));
+  saveAlertedSet(alertedPairs);
+}
+
+// ============= API (Express 서버 + .env 키) =============
+let serverOk = false;
+async function apiGetPosts(q) {
+  const url = '/api/posts' + (q ? '?q=' + encodeURIComponent(q) : '');
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('posts ' + res.status);
+  return res.json();
+}
+async function apiAddPost(body) {
+  const res = await fetch('/api/posts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(t || 'post failed');
+  }
+  return res.json();
+}
+async function apiDeletePost(id) {
+  const res = await fetch('/api/posts/' + id, { method: 'DELETE' });
+  if (!res.ok) throw new Error('delete ' + res.status);
+  return res.json();
+}
+
+// ============= 탭 전환 =============
+document.querySelectorAll('.tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-' + t.dataset.panel).classList.add('active');
+    if (t.dataset.panel === 'alerts') markAlertsRead();
+  };
+});
+
+// ============= GPT 매칭 (서버가 .env 키로 OpenAI 호출) =============
+async function checkMatch(myKeywords, myDesc, foundDesc, foundLoc) {
+  try {
+    const res = await fetch('/api/match', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lostKeywords: myKeywords,
+        lostDescription: myDesc || '',
+        foundDescription: foundDesc,
+        foundLocation: foundLoc || '',
+      }),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      console.error('매칭 API 오류', res.status, text);
+      return null;
+    }
+    return JSON.parse(text);
+  } catch (e) {
+    console.error('매칭 API 에러:', e);
+    return null;
+  }
+}
+
+async function matchLostAgainstPost(lost, post, opts) {
+  const silent = opts && opts.silent;
+  if (alertedPairs.has(pairKey(lost.id, post.id))) return false;
+  const result = await checkMatch(lost.keywords, lost.description, post.description, post.location);
+  if (!result) {
+    if (!silent) showStatus('⚠️ AI 매칭 실패 (.env 키·네트워크 확인)');
+    return false;
+  }
+  const sim = Number(result.similarity);
+  const ok = result.match === true || (Number.isFinite(sim) && sim >= 50);
+  if (!ok) return false;
+  const alert = {
+    id: Date.now() + Math.random(),
+    lostItemId: lost.id,
+    postId: post.id,
+    lostKeywords: lost.keywords,
+    foundLocation: post.location,
+    foundDescription: post.description,
+    similarity: Number.isFinite(sim) ? sim : 0,
+    reason: result.reason || '',
+    timestamp: new Date().toLocaleString('ko-KR'),
+    read: false,
+  };
+  data.alerts.unshift(alert);
+  save();
+  markPairAlerted(lost.id, post.id);
+  sendBrowserNotification(alert);
+  renderAlerts();
+  return true;
+}
+
+async function runMatchAllForPost(post, opts) {
+  if (data.lostItems.length === 0) return 0;
+  let n = 0;
+  for (const lost of data.lostItems) {
+    if (await matchLostAgainstPost(lost, post, opts)) n++;
+  }
+  return n;
+}
+
+let scanTimer = null;
+let scanBusy = false;
+
+function setScanStatus(msg) {
+  const el = document.getElementById('scanStatus');
+  if (el) el.textContent = msg;
+}
+
+async function periodicScanTick() {
+  if (!serverOk || scanBusy || data.lostItems.length === 0) return;
+  scanBusy = true;
+  setScanStatus('스캔 중…');
+  try {
+    const { posts } = await apiGetPosts('');
+    let newAlerts = 0;
+    for (const post of posts) {
+      for (const lost of data.lostItems) {
+        if (await matchLostAgainstPost(lost, post, { silent: true })) newAlerts++;
+      }
+    }
+    setScanStatus(newAlerts ? '추천 ' + newAlerts + '건' : '변화 없음');
+    if (newAlerts) showStatus('🔔 주기 스캔: 새 추천 ' + newAlerts + '건');
+  } catch (e) {
+    console.error(e);
+    setScanStatus('오류');
+  } finally {
+    scanBusy = false;
+  }
+}
+
+function restartScanTimer() {
+  if (scanTimer) clearInterval(scanTimer);
+  scanTimer = null;
+  const sel = document.getElementById('scanInterval');
+  const ms = sel ? Number(sel.value) : 0;
+  if (!ms) {
+    setScanStatus('꺼짐');
+    return;
+  }
+  setScanStatus('~' + Math.round(ms / 1000) + '초마다');
+  scanTimer = setInterval(periodicScanTick, ms);
+}
+
+const scanIntervalEl = document.getElementById('scanInterval');
+if (scanIntervalEl) {
+  scanIntervalEl.onchange = restartScanTimer;
+}
+
+// ============= 분실물 등록 =============
+document.getElementById('lostForm').onsubmit = async e => {
+  e.preventDefault();
+  const keywords = document.getElementById('lostKeywords').value.trim();
+  const desc = document.getElementById('lostDescription').value.trim();
+  if (!keywords) return;
+  data.lostItems.unshift({
+    id: Date.now(),
+    keywords,
+    description: desc,
+    registeredAt: new Date().toLocaleString('ko-KR')
+  });
+  save();
+  e.target.reset();
+  renderLost();
+  showStatus('✅ 키워드 등록 완료! AI가 모니터링을 시작합니다.');
+  try {
+    await apiGetPosts('');
+    serverOk = true;
+    periodicScanTick();
+  } catch {
+    /* 서버 미기동 시 주기 스캔은 연결 후 자동 */
+  }
+};
+
+function renderLost() {
+  const el = document.getElementById('myLostList');
+  if (data.lostItems.length === 0) {
+    el.innerHTML = '<div class="empty">아직 등록한 키워드가 없어요. 위에 등록하면 24시간 모니터링이 시작됩니다 🦅</div>';
+    return;
+  }
+  el.innerHTML = data.lostItems.map(i => `
+    <div class="item">
+      <div class="item-title">🏷️ ${escape(i.keywords)}</div>
+      <div class="item-desc">${escape(i.description) || '<i style="color:#bbb">설명 없음</i>'}</div>
+      <div class="item-meta">${i.registeredAt}</div>
+      <button class="delete-btn" onclick="deleteLost(${i.id})">삭제</button>
+    </div>
+  `).join('');
+}
+
+window.deleteLost = id => {
+  if (!confirm('이 키워드를 삭제할까요?')) return;
+  data.lostItems = data.lostItems.filter(i => i.id !== id);
+  save();
+  renderLost();
+};
+
+// ============= 습득물 등록 (JSON 파일) + AI 자동 매칭 =============
+document.getElementById('foundForm').onsubmit = async e => {
+  e.preventDefault();
+  const loc = document.getElementById('foundLocation').value.trim();
+  const desc = document.getElementById('foundDescription').value.trim();
+  if (!loc || !desc) return;
+
+  const submitBtn = document.getElementById('foundSubmit');
+  submitBtn.disabled = true;
+  try {
+    const { post: newPost } = await apiAddPost({ location: loc, description: desc, postedBy: '나' });
+    e.target.reset();
+    await refreshBoardList();
+
+    if (data.lostItems.length > 0) {
+      showStatus('🤖 AI가 키워드와 비교 중...');
+      const matchCount = await runMatchAllForPost(newPost, { silent: true });
+      showStatus(matchCount > 0 ? '🎯 추천 ' + matchCount + '건!' : '🤖 이번 글은 확실한 매칭 없음');
+    } else {
+      showStatus('✅ 게시판(JSON)에 저장되었습니다!');
+    }
+  } catch (err) {
+    console.error(err);
+    alert('서버에 저장하지 못했습니다. npm start 후 다시 시도하세요.');
+  }
+  submitBtn.disabled = false;
+};
+
+let boardSearchDebounce;
+document.getElementById('boardSearch').addEventListener('input', () => {
+  clearTimeout(boardSearchDebounce);
+  boardSearchDebounce = setTimeout(refreshBoardList, 280);
+});
+
+async function refreshBoardList() {
+  const el = document.getElementById('boardList');
+  const q = document.getElementById('boardSearch').value.trim();
+  try {
+    const { posts } = await apiGetPosts(q);
+    serverOk = true;
+    const hint = document.getElementById('serverHint');
+    if (hint) {
+      hint.classList.remove('error');
+      hint.innerHTML = '<strong>연결됨:</strong> 게시글은 <code>data/posts.json</code>과 동기화됩니다. API 키는 서버가 <code>.env</code>에서 읽습니다.';
+    }
+    if (posts.length === 0) {
+      el.innerHTML = '<div class="empty">' + (q ? '검색 결과가 없어요.' : '아직 습득물이 없어요.') + '</div>';
+      return;
+    }
+    el.innerHTML = posts.map(p => `
+    <div class="item">
+      <div class="item-title">📍 ${escape(p.location)}</div>
+      <div class="item-desc">${escape(p.description)}</div>
+      <div class="item-meta">${escape(p.postedAt)} · ${escape(p.postedBy)} · id ${p.id}</div>
+      <button type="button" class="delete-btn" data-post-id="${p.id}">삭제</button>
+    </div>
+  `).join('');
+    el.querySelectorAll('[data-post-id]').forEach(btn => {
+      btn.onclick = () => deleteBoardPost(Number(btn.getAttribute('data-post-id')));
+    });
+  } catch (err) {
+    serverOk = false;
+    const hint = document.getElementById('serverHint');
+    if (hint) {
+      hint.classList.add('error');
+      hint.innerHTML = '<strong>서버에 연결할 수 없습니다.</strong> 터미널에서 <code>npm install</code> → <code>npm start</code> 후 <a href="/jubjub.html">/jubjub.html</a>로 열어 주세요.';
+    }
+    el.innerHTML = '<div class="empty">게시글을 불러오지 못했습니다.</div>';
+  }
+}
+
+window.deleteBoardPost = async function (id) {
+  if (!confirm('이 게시글을 삭제할까요? JSON에서도 제거됩니다.')) return;
+  try {
+    await apiDeletePost(id);
+    await refreshBoardList();
+    showStatus('🗑️ 삭제했습니다');
+  } catch (e) {
+    console.error(e);
+    alert('삭제 실패');
+  }
+};
+
+// ============= 브라우저 알림 =============
+async function sendBrowserNotification(alert) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') {
+    await Notification.requestPermission();
+  }
+  if (Notification.permission === 'granted') {
+    new Notification('🦝 줍줍 - 매칭 발견!', {
+      body: `"${alert.lostKeywords}"와 맞을 수 있는 물건: ${alert.foundLocation}\n추천 ${alert.similarity}%`,
+      tag: 'jubjub-' + alert.id
+    });
+  }
+}
+
+function renderAlerts() {
+  const el = document.getElementById('alertsList');
+  const unread = data.alerts.filter(a => !a.read).length;
+  const badge = document.getElementById('alertBadge');
+  badge.textContent = unread;
+  badge.classList.toggle('show', unread > 0);
+
+  if (data.alerts.length === 0) {
+    el.innerHTML = '<div class="empty">아직 매칭된 알림이 없어요.<br>AI가 24시간 지켜보고 있으니 안심하세요 👀</div>';
+    return;
+  }
+  el.innerHTML = data.alerts.map(a => `
+    <div class="item alert-item ${a.read ? 'read' : ''}">
+      <span class="similarity">추천 확률 ${a.similarity}%</span>
+      <div class="item-title">🎯 "${escape(a.lostKeywords)}" 후보</div>
+      <div class="item-desc">📍 ${escape(a.foundLocation)}<br>${escape(a.foundDescription)}</div>
+      <div class="reason">💡 ${escape(a.reason)}</div>
+      <div class="item-meta">${a.timestamp}</div>
+    </div>
+  `).join('');
+}
+
+function markAlertsRead() {
+  data.alerts.forEach(a => a.read = true);
+  save();
+  renderAlerts();
+}
+
+// ============= 유틸 =============
+function escape(s) {
+  if (!s) return '';
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+let statusTimer;
+function showStatus(msg) {
+  const s = document.getElementById('status');
+  s.textContent = msg;
+  s.classList.add('show');
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => s.classList.remove('show'), 2500);
+}
+
+// ============= 초기 알림 권한 요청 =============
+if ('Notification' in window && Notification.permission === 'default') {
+  setTimeout(() => Notification.requestPermission(), 1000);
+}
+
+// ============= 초기 렌더링 =============
+renderLost();
+renderAlerts();
+refreshBoardList().then(() => restartScanTimer());
+</script>
+</body>
+</html>
