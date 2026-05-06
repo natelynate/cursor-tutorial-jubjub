@@ -284,7 +284,7 @@
   <div class="panel active" id="panel-lost">
     <div class="card-section">
       <h2>찾고 있는 물건 등록</h2>
-      <p class="hint">키워드를 등록해두면, 게시글 목록(<code>data/posts.json</code>)을 일정 간격으로 AI가 훑어서 잃어버린 물건일 가능성이 높은 글을 추천·알림합니다 🤖</p>
+      <p class="hint">키워드·설명(+이미지)을 등록해두면, 습득물 목록(<code>data/found_items.json</code>)을 일정 간격으로 AI가 훑어서 잃어버린 물건일 가능성이 높은 항목을 추천·알림합니다 🤖</p>
       <div class="monitor-bar">
         <span>🔁 AI 주기 스캔</span>
         <select id="scanInterval" title="등록 키워드 vs 전체 게시글 재검사 간격">
@@ -299,6 +299,7 @@
       <form id="lostForm">
         <input type="text" id="lostKeywords" placeholder="키워드 (예: 검정 텀블러, 스타벅스 로고)" required>
         <textarea id="lostDescription" placeholder="자세한 설명 (예: 어제 오후 3층 대회의실에 두고 옴, 파란 스티커 부착)"></textarea>
+        <input type="file" id="lostImage" accept="image/*">
         <button type="submit" class="primary">키워드 등록하기</button>
       </form>
       <div class="item-list" id="myLostList"></div>
@@ -312,13 +313,13 @@
       <p class="hint">새 글이 등록되면 모든 사람의 등록된 키워드와 AI가 자동 비교합니다.</p>
       <form id="foundForm">
         <input type="text" id="foundLocation" placeholder="발견 장소 (예: 3층 대회의실)" required>
-        <textarea id="foundDescription" placeholder="물건 설명 (예: 검정색 텀블러, 스타벅스 로고, 파란 스티커)" required></textarea>
+        <input type="file" id="foundImage" accept="image/*" required>
         <button type="submit" class="primary" id="foundSubmit">줍줍 등록!</button>
       </form>
     </div>
     <div class="card-section">
       <h2>📋 게시판</h2>
-      <p class="hint">목록은 <code>data/posts.json</code>과 동기화됩니다. 검색은 제목·설명·작성자 기준입니다.</p>
+      <p class="hint">목록은 <code>data/found_items.json</code>과 동기화됩니다. 검색은 장소·설명·키워드 기준입니다.</p>
       <div class="search-row">
         <label for="boardSearch">🔎 검색</label>
         <input type="search" id="boardSearch" placeholder="키워드 (예: 충전기, 3층, 김주섬)" autocomplete="off">
@@ -341,14 +342,13 @@
 <div id="status"></div>
 
 <script>
-// ============= 데이터 (분실 키워드·알림만 로컬; 게시글은 data/posts.json) =============
-const STORAGE_KEY = 'jubjub_data_v2';
+// ============= 데이터 (알림만 로컬; 분실/습득물은 서버 JSON) =============
+const STORAGE_KEY = 'jubjub_alerts_only_v1';
 const ALERTED_STORAGE_KEY = 'jubjub_alerted_v1';
 
 function loadData() {
   let raw = localStorage.getItem(STORAGE_KEY);
-  let d = raw ? JSON.parse(raw) : { lostItems: [], alerts: [] };
-  if (!Array.isArray(d.lostItems)) d.lostItems = [];
+  let d = raw ? JSON.parse(raw) : { alerts: [] };
   if (!Array.isArray(d.alerts)) d.alerts = [];
   return d;
 }
@@ -381,26 +381,91 @@ function markPairAlerted(lostId, postId) {
 
 // ============= API (Express 서버 + .env 키) =============
 let serverOk = false;
-async function apiGetPosts(q) {
-  const url = '/api/posts' + (q ? '?q=' + encodeURIComponent(q) : '');
+async function apiGetFoundItems(q) {
+  const url = '/api/found-items' + (q ? '?q=' + encodeURIComponent(q) : '');
   const res = await fetch(url);
-  if (!res.ok) throw new Error('posts ' + res.status);
+  if (!res.ok) throw new Error('found-items ' + res.status);
   return res.json();
 }
-async function apiAddPost(body) {
-  const res = await fetch('/api/posts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+
+async function apiAddFoundItem({ location, file }) {
+  // #region agent log
+  fetch('http://127.0.0.1:7884/ingest/5e8df2af-a849-40e1-b0c9-c94885113c23',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'26b669'},body:JSON.stringify({sessionId:'26b669',runId:'save-debug-1',hypothesisId:'H1',location:'jubjub.html:apiAddFoundItem:start',message:'calling /api/found-items',data:{hasLocation:!!location,hasFile:!!file,fileType:file&&file.type?file.type:null,fileSize:file&&file.size?file.size:null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  const fd = new FormData();
+  fd.append('location', location);
+  fd.append('image', file);
+  const res = await fetch('/api/found-items', { method: 'POST', body: fd });
   if (!res.ok) {
     const t = await res.text();
-    throw new Error(t || 'post failed');
+    // #region agent log
+    fetch('http://127.0.0.1:7884/ingest/5e8df2af-a849-40e1-b0c9-c94885113c23',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'26b669'},body:JSON.stringify({sessionId:'26b669',runId:'save-debug-1',hypothesisId:'H2',location:'jubjub.html:apiAddFoundItem:fail',message:'/api/found-items non-ok',data:{status:res.status,responseText:t.slice(0,300)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    throw new Error(t);
   }
+  // #region agent log
+  fetch('http://127.0.0.1:7884/ingest/5e8df2af-a849-40e1-b0c9-c94885113c23',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'26b669'},body:JSON.stringify({sessionId:'26b669',runId:'save-debug-1',hypothesisId:'H4',location:'jubjub.html:apiAddFoundItem:ok',message:'/api/found-items success',data:{status:res.status},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   return res.json();
 }
-async function apiDeletePost(id) {
-  const res = await fetch('/api/posts/' + id, { method: 'DELETE' });
+
+async function apiPatchFoundStatus(id, status) {
+  const res = await fetch('/api/found-items/' + id + '/status', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+async function apiDeleteFoundItem(id) {
+  const res = await fetch('/api/found-items/' + id, { method: 'DELETE' });
+  if (!res.ok) throw new Error('delete ' + res.status);
+  return res.json();
+}
+
+async function apiGetLostItems(q) {
+  const url = '/api/lost-items' + (q ? '?q=' + encodeURIComponent(q) : '');
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('lost-items ' + res.status);
+  return res.json();
+}
+
+async function apiAddLostItem({ inputKeywords, inputDescription, file }) {
+  // #region agent log
+  fetch('http://127.0.0.1:7884/ingest/5e8df2af-a849-40e1-b0c9-c94885113c23',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'26b669'},body:JSON.stringify({sessionId:'26b669',runId:'save-debug-1',hypothesisId:'H1',location:'jubjub.html:apiAddLostItem:start',message:'calling /api/lost-items',data:{hasKeywords:!!inputKeywords,descLen:(inputDescription||'').length,hasFile:!!file,fileType:file&&file.type?file.type:null,fileSize:file&&file.size?file.size:null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  const fd = new FormData();
+  fd.append('inputKeywords', inputKeywords);
+  fd.append('inputDescription', inputDescription || '');
+  if (file) fd.append('image', file);
+  const res = await fetch('/api/lost-items', { method: 'POST', body: fd });
+  if (!res.ok) {
+    const t = await res.text();
+    // #region agent log
+    fetch('http://127.0.0.1:7884/ingest/5e8df2af-a849-40e1-b0c9-c94885113c23',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'26b669'},body:JSON.stringify({sessionId:'26b669',runId:'save-debug-1',hypothesisId:'H2',location:'jubjub.html:apiAddLostItem:fail',message:'/api/lost-items non-ok',data:{status:res.status,responseText:t.slice(0,300)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    throw new Error(t);
+  }
+  // #region agent log
+  fetch('http://127.0.0.1:7884/ingest/5e8df2af-a849-40e1-b0c9-c94885113c23',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'26b669'},body:JSON.stringify({sessionId:'26b669',runId:'save-debug-1',hypothesisId:'H4',location:'jubjub.html:apiAddLostItem:ok',message:'/api/lost-items success',data:{status:res.status},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  return res.json();
+}
+
+async function apiPatchLostStatus(id, status) {
+  const res = await fetch('/api/lost-items/' + id + '/status', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+async function apiDeleteLostItem(id) {
+  const res = await fetch('/api/lost-items/' + id, { method: 'DELETE' });
   if (!res.ok) throw new Error('delete ' + res.status);
   return res.json();
 }
@@ -441,10 +506,12 @@ async function checkMatch(myKeywords, myDesc, foundDesc, foundLoc) {
   }
 }
 
-async function matchLostAgainstPost(lost, post, opts) {
+async function matchLostAgainstFoundItem(lost, found, opts) {
   const silent = opts && opts.silent;
-  if (alertedPairs.has(pairKey(lost.id, post.id))) return false;
-  const result = await checkMatch(lost.keywords, lost.description, post.description, post.location);
+  if (alertedPairs.has(pairKey(lost.id, found.id))) return false;
+  const foundText = (found.description || '') + (Array.isArray(found.keywords) && found.keywords.length ? ' (키워드: ' + found.keywords.join(', ') + ')' : '');
+  const myKeywords = (Array.isArray(lost.mergedKeywords) && lost.mergedKeywords.length ? lost.mergedKeywords.join(' ') : (lost.inputKeywords || ''));
+  const result = await checkMatch(myKeywords, lost.inputDescription || '', foundText, found.location);
   if (!result) {
     if (!silent) showStatus('⚠️ AI 매칭 실패 (.env 키·네트워크 확인)');
     return false;
@@ -455,10 +522,12 @@ async function matchLostAgainstPost(lost, post, opts) {
   const alert = {
     id: Date.now() + Math.random(),
     lostItemId: lost.id,
-    postId: post.id,
-    lostKeywords: lost.keywords,
-    foundLocation: post.location,
-    foundDescription: post.description,
+    foundItemId: found.id,
+    lostKeywords: myKeywords,
+    foundLocation: found.location,
+    foundDescription: found.description || '',
+    foundImageRelPath: found.imageRelPath || '',
+    foundKeywords: Array.isArray(found.keywords) ? found.keywords : [],
     similarity: Number.isFinite(sim) ? sim : 0,
     reason: result.reason || '',
     timestamp: new Date().toLocaleString('ko-KR'),
@@ -466,17 +535,19 @@ async function matchLostAgainstPost(lost, post, opts) {
   };
   data.alerts.unshift(alert);
   save();
-  markPairAlerted(lost.id, post.id);
+  markPairAlerted(lost.id, found.id);
   sendBrowserNotification(alert);
   renderAlerts();
   return true;
 }
 
-async function runMatchAllForPost(post, opts) {
-  if (data.lostItems.length === 0) return 0;
+async function runMatchAllForFoundItem(found, opts) {
+  const { lostItems } = await apiGetLostItems('');
+  if (!lostItems || lostItems.length === 0) return 0;
   let n = 0;
-  for (const lost of data.lostItems) {
-    if (await matchLostAgainstPost(lost, post, opts)) n++;
+  for (const lost of lostItems) {
+    if (lost.status && lost.status !== 'open') continue;
+    if (await matchLostAgainstFoundItem(lost, found, opts)) n++;
   }
   return n;
 }
@@ -490,15 +561,22 @@ function setScanStatus(msg) {
 }
 
 async function periodicScanTick() {
-  if (!serverOk || scanBusy || data.lostItems.length === 0) return;
+  if (!serverOk || scanBusy) return;
   scanBusy = true;
   setScanStatus('스캔 중…');
   try {
-    const { posts } = await apiGetPosts('');
+    const { foundItems } = await apiGetFoundItems('');
+    const { lostItems } = await apiGetLostItems('');
+    if (!lostItems || lostItems.length === 0) {
+      setScanStatus('대기 중');
+      return;
+    }
     let newAlerts = 0;
-    for (const post of posts) {
-      for (const lost of data.lostItems) {
-        if (await matchLostAgainstPost(lost, post, { silent: true })) newAlerts++;
+    for (const found of foundItems || []) {
+      if (found.status && found.status === 'returned') continue;
+      for (const lost of lostItems) {
+        if (lost.status && lost.status !== 'open') continue;
+        if (await matchLostAgainstFoundItem(lost, found, { silent: true })) newAlerts++;
       }
     }
     setScanStatus(newAlerts ? '추천 ' + newAlerts + '건' : '변화 없음');
@@ -532,21 +610,24 @@ if (scanIntervalEl) {
 // ============= 분실물 등록 =============
 document.getElementById('lostForm').onsubmit = async e => {
   e.preventDefault();
-  const keywords = document.getElementById('lostKeywords').value.trim();
-  const desc = document.getElementById('lostDescription').value.trim();
-  if (!keywords) return;
-  data.lostItems.unshift({
-    id: Date.now(),
-    keywords,
-    description: desc,
-    registeredAt: new Date().toLocaleString('ko-KR')
-  });
-  save();
-  e.target.reset();
-  renderLost();
-  showStatus('✅ 키워드 등록 완료! AI가 모니터링을 시작합니다.');
+  const inputKeywords = document.getElementById('lostKeywords').value.trim();
+  const inputDescription = document.getElementById('lostDescription').value.trim();
+  const file = document.getElementById('lostImage').files[0] || null;
+  if (!inputKeywords) return;
   try {
-    await apiGetPosts('');
+    await apiAddLostItem({ inputKeywords, inputDescription, file });
+    e.target.reset();
+    await refreshLostList();
+    showStatus('✅ 분실물 등록 완료! AI가 모니터링을 시작합니다.');
+  } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7884/ingest/5e8df2af-a849-40e1-b0c9-c94885113c23',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'26b669'},body:JSON.stringify({sessionId:'26b669',runId:'save-debug-1',hypothesisId:'H5',location:'jubjub.html:lostForm:catch',message:'lost save catch',data:{error:String(err&&err.message?err.message:err)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    console.error(err);
+    alert('서버에 저장하지 못했습니다. npm start 후 다시 시도하세요.');
+  }
+  try {
+    await apiGetFoundItems('');
     serverOk = true;
     periodicScanTick();
   } catch {
@@ -554,51 +635,91 @@ document.getElementById('lostForm').onsubmit = async e => {
   }
 };
 
-function renderLost() {
+async function refreshLostList() {
+  try {
+    const { lostItems } = await apiGetLostItems('');
+    renderLost(lostItems || []);
+    serverOk = true;
+  } catch (e) {
+    console.error(e);
+    renderLost([]);
+    serverOk = false;
+  }
+}
+
+function renderLost(lostItems) {
   const el = document.getElementById('myLostList');
-  if (data.lostItems.length === 0) {
-    el.innerHTML = '<div class="empty">아직 등록한 키워드가 없어요. 위에 등록하면 24시간 모니터링이 시작됩니다 🦅</div>';
+  if (!lostItems || lostItems.length === 0) {
+    el.innerHTML = '<div class="empty">아직 등록한 분실물이 없어요. 위에 등록하면 24시간 모니터링이 시작됩니다.</div>';
     return;
   }
-  el.innerHTML = data.lostItems.map(i => `
+  el.innerHTML = lostItems.map(i => `
     <div class="item">
-      <div class="item-title">🏷️ ${escape(i.keywords)}</div>
-      <div class="item-desc">${escape(i.description) || '<i style="color:#bbb">설명 없음</i>'}</div>
-      <div class="item-meta">${i.registeredAt}</div>
-      <button class="delete-btn" onclick="deleteLost(${i.id})">삭제</button>
+      <div class="item-title">🔍 ${escape(i.inputKeywords || '')}</div>
+      <div class="item-desc">${escape(i.inputDescription) || '<i style="color:#bbb">설명 없음</i>'}</div>
+      ${i.imageRelPath ? `<div class="item-desc"><img alt="분실물 이미지" src="/${escape(i.imageRelPath)}" style="max-width:100%; border-radius:10px; border:1px solid #f0e0d0;"></div>` : ''}
+      <div class="item-meta">${escape(i.createdAt || '')}</div>
+      <div class="monitor-bar" style="margin-top:8px;">
+        <span>상태</span>
+        <select data-lost-status="${i.id}">
+          <option value="open" ${i.status === 'open' ? 'selected' : ''}>미해결</option>
+          <option value="found" ${i.status === 'found' ? 'selected' : ''}>찾음</option>
+        </select>
+        <button class="delete-btn" data-lost-delete="${i.id}">삭제</button>
+      </div>
     </div>
   `).join('');
+
+  el.querySelectorAll('[data-lost-delete]').forEach(btn => {
+    btn.onclick = () => deleteLost(Number(btn.getAttribute('data-lost-delete')));
+  });
+  el.querySelectorAll('[data-lost-status]').forEach(sel => {
+    sel.onchange = async () => {
+      const id = Number(sel.getAttribute('data-lost-status'));
+      const status = sel.value;
+      try {
+        await apiPatchLostStatus(id, status);
+        await refreshLostList();
+      } catch (e) {
+        console.error(e);
+        alert('상태 변경 실패');
+      }
+    };
+  });
 }
 
 window.deleteLost = id => {
-  if (!confirm('이 키워드를 삭제할까요?')) return;
-  data.lostItems = data.lostItems.filter(i => i.id !== id);
-  save();
-  renderLost();
+  if (!confirm('이 분실물 항목을 삭제할까요?')) return;
+  apiDeleteLostItem(id)
+    .then(refreshLostList)
+    .then(() => showStatus('🗑️ 삭제했습니다'))
+    .catch((e) => {
+      console.error(e);
+      alert('삭제 실패');
+    });
 };
 
 // ============= 습득물 등록 (JSON 파일) + AI 자동 매칭 =============
 document.getElementById('foundForm').onsubmit = async e => {
   e.preventDefault();
   const loc = document.getElementById('foundLocation').value.trim();
-  const desc = document.getElementById('foundDescription').value.trim();
-  if (!loc || !desc) return;
+  const file = document.getElementById('foundImage').files[0] || null;
+  if (!loc || !file) return;
 
   const submitBtn = document.getElementById('foundSubmit');
   submitBtn.disabled = true;
   try {
-    const { post: newPost } = await apiAddPost({ location: loc, description: desc, postedBy: '나' });
+    const { foundItem: newFound } = await apiAddFoundItem({ location: loc, file });
     e.target.reset();
     await refreshBoardList();
 
-    if (data.lostItems.length > 0) {
-      showStatus('🤖 AI가 키워드와 비교 중...');
-      const matchCount = await runMatchAllForPost(newPost, { silent: true });
+    showStatus('🤖 AI가 키워드와 비교 중...');
+    const matchCount = await runMatchAllForFoundItem(newFound, { silent: true });
       showStatus(matchCount > 0 ? '🎯 추천 ' + matchCount + '건!' : '🤖 이번 글은 확실한 매칭 없음');
-    } else {
-      showStatus('✅ 게시판(JSON)에 저장되었습니다!');
-    }
   } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7884/ingest/5e8df2af-a849-40e1-b0c9-c94885113c23',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'26b669'},body:JSON.stringify({sessionId:'26b669',runId:'save-debug-1',hypothesisId:'H5',location:'jubjub.html:foundForm:catch',message:'found save catch',data:{error:String(err&&err.message?err.message:err)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     console.error(err);
     alert('서버에 저장하지 못했습니다. npm start 후 다시 시도하세요.');
   }
@@ -615,27 +736,49 @@ async function refreshBoardList() {
   const el = document.getElementById('boardList');
   const q = document.getElementById('boardSearch').value.trim();
   try {
-    const { posts } = await apiGetPosts(q);
+    const { foundItems } = await apiGetFoundItems(q);
     serverOk = true;
     const hint = document.getElementById('serverHint');
     if (hint) {
       hint.classList.remove('error');
-      hint.innerHTML = '<strong>연결됨:</strong> 게시글은 <code>data/posts.json</code>과 동기화됩니다. API 키는 서버가 <code>.env</code>에서 읽습니다.';
+      hint.innerHTML = '<strong>연결됨:</strong> 습득물은 <code>data/found_items.json</code>과 동기화됩니다. AI 키는 서버가 <code>.env</code>에서 읽습니다.';
     }
-    if (posts.length === 0) {
+    if (!foundItems || foundItems.length === 0) {
       el.innerHTML = '<div class="empty">' + (q ? '검색 결과가 없어요.' : '아직 습득물이 없어요.') + '</div>';
       return;
     }
-    el.innerHTML = posts.map(p => `
+    el.innerHTML = foundItems.map(p => `
     <div class="item">
       <div class="item-title">📍 ${escape(p.location)}</div>
-      <div class="item-desc">${escape(p.description)}</div>
-      <div class="item-meta">${escape(p.postedAt)} · ${escape(p.postedBy)} · id ${p.id}</div>
-      <button type="button" class="delete-btn" data-post-id="${p.id}">삭제</button>
+      ${p.imageRelPath ? `<div class="item-desc"><img alt="습득물 이미지" src="/${escape(p.imageRelPath)}" style="max-width:100%; border-radius:10px; border:1px solid #f0e0d0;"></div>` : ''}
+      <div class="item-desc">${escape(p.description || '⏳ AI가 이미지 분석 중…')}</div>
+      <div class="item-desc">${Array.isArray(p.keywords) && p.keywords.length ? p.keywords.map(k => `<span class="similarity" style="background:#f5a878; margin-right:6px;">#${escape(k)}</span>`).join('') : ''}</div>
+      <div class="monitor-bar" style="margin-top:8px;">
+        <span>상태</span>
+        <select data-found-status="${p.id}">
+          <option value="stored" ${p.status === 'stored' ? 'selected' : ''}>보관중</option>
+          <option value="returned" ${p.status === 'returned' ? 'selected' : ''}>전달완료</option>
+        </select>
+        <button type="button" class="delete-btn" data-found-id="${p.id}">삭제</button>
+      </div>
+      <div class="item-meta">${escape(p.createdAt || '')} · ${escape(p.createdBy || '')} · id ${p.id}</div>
     </div>
   `).join('');
-    el.querySelectorAll('[data-post-id]').forEach(btn => {
-      btn.onclick = () => deleteBoardPost(Number(btn.getAttribute('data-post-id')));
+    el.querySelectorAll('[data-found-id]').forEach(btn => {
+      btn.onclick = () => deleteBoardFoundItem(Number(btn.getAttribute('data-found-id')));
+    });
+    el.querySelectorAll('[data-found-status]').forEach(sel => {
+      sel.onchange = async () => {
+        const id = Number(sel.getAttribute('data-found-status'));
+        const status = sel.value;
+        try {
+          await apiPatchFoundStatus(id, status);
+          await refreshBoardList();
+        } catch (e) {
+          console.error(e);
+          alert('상태 변경 실패');
+        }
+      };
     });
   } catch (err) {
     serverOk = false;
@@ -648,10 +791,10 @@ async function refreshBoardList() {
   }
 }
 
-window.deleteBoardPost = async function (id) {
-  if (!confirm('이 게시글을 삭제할까요? JSON에서도 제거됩니다.')) return;
+window.deleteBoardFoundItem = async function (id) {
+  if (!confirm('이 습득물 항목을 삭제할까요? JSON에서도 제거됩니다.')) return;
   try {
-    await apiDeletePost(id);
+    await apiDeleteFoundItem(id);
     await refreshBoardList();
     showStatus('🗑️ 삭제했습니다');
   } catch (e) {
@@ -689,7 +832,10 @@ function renderAlerts() {
     <div class="item alert-item ${a.read ? 'read' : ''}">
       <span class="similarity">추천 확률 ${a.similarity}%</span>
       <div class="item-title">🎯 "${escape(a.lostKeywords)}" 후보</div>
-      <div class="item-desc">📍 ${escape(a.foundLocation)}<br>${escape(a.foundDescription)}</div>
+      <div class="item-desc">📍 ${escape(a.foundLocation)}</div>
+      ${a.foundImageRelPath ? `<div class="item-desc"><img alt="후보 이미지" src="/${escape(a.foundImageRelPath)}" style="max-width:100%; border-radius:10px; border:1px solid #f0e0d0;"></div>` : ''}
+      <div class="item-desc">${escape(a.foundDescription || '')}</div>
+      <div class="item-desc">${Array.isArray(a.foundKeywords) && a.foundKeywords.length ? a.foundKeywords.map(k => `<span class="similarity" style="background:#f5a878; margin-right:6px;">#${escape(k)}</span>`).join('') : ''}</div>
       <div class="reason">💡 ${escape(a.reason)}</div>
       <div class="item-meta">${a.timestamp}</div>
     </div>
@@ -723,7 +869,7 @@ if ('Notification' in window && Notification.permission === 'default') {
 }
 
 // ============= 초기 렌더링 =============
-renderLost();
+refreshLostList();
 renderAlerts();
 refreshBoardList().then(() => restartScanTimer());
 </script>

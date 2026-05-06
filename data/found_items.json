@@ -1,0 +1,52 @@
+{
+  "foundItems": [
+    {
+      "id": 1778045417599,
+      "location": "3층 대회의실",
+      "imageFileName": "image1.jpg",
+      "imageRelPath": "image/image1.jpg",
+      "description": "검정색 텀블러(컵)로 보이며 로고/스티커가 있을 수 있습니다.",
+      "keywords": [
+        "텀블러",
+        "컵",
+        "검정"
+      ],
+      "status": "stored",
+      "createdAt": "2026-05-06T05:30:20.599Z",
+      "createdBy": "데모",
+      "source": "demo"
+    },
+    {
+      "id": 1778045418600,
+      "location": "1층 로비",
+      "imageFileName": "image2.jpg",
+      "imageRelPath": "image/image2.jpg",
+      "description": "지갑으로 보이며 카드/현금이 들어있을 수 있습니다.",
+      "keywords": [
+        "지갑",
+        "카드",
+        "가죽"
+      ],
+      "status": "stored",
+      "createdAt": "2026-05-06T05:30:20.600Z",
+      "createdBy": "데모",
+      "source": "demo"
+    },
+    {
+      "id": 1778045419600,
+      "location": "주차장",
+      "imageFileName": "image3.jpg",
+      "imageRelPath": "image/image3.jpg",
+      "description": "차 키(키링 포함)로 보입니다.",
+      "keywords": [
+        "차키",
+        "자동차",
+        "키링"
+      ],
+      "status": "stored",
+      "createdAt": "2026-05-06T05:30:20.600Z",
+      "createdBy": "데모",
+      "source": "demo"
+    }
+  ]
+}
